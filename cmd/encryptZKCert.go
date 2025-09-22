@@ -21,8 +21,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/encryption"
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/zkcertificate"
+	"github.com/jilio/guardians-sdk/v3/pkg/encryption"
+	"github.com/jilio/guardians-sdk/v3/pkg/zkcertificate"
 )
 
 type encryptZKCertFlags struct {
