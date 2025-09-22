@@ -175,7 +175,7 @@ func (p *ProviderData) UnmarshalJSON(data []byte) error {
 type IssuedCertificate[T Content] struct {
 	Certificate[T] `json:",inline"`
 	Registration   RegistrationDetails `json:"registration"`
-	MerkleProof    merkle.Proof        `json:"merkleProof"`
+	MerkleProof    *merkle.Proof       `json:"merkleProof,omitempty"`
 }
 
 // RegistrationDetails represents details related to the registration of a certificate.
@@ -346,7 +346,7 @@ func DeserializeIssuedCertificateJSON(r io.Reader) (IssuedCertificate[Content], 
 			RandomSalt:       alias.RandomSalt,
 		},
 		Registration: alias.Registration,
-		MerkleProof:  alias.MerkleProof,
+		MerkleProof:  &alias.MerkleProof,
 	}, nil
 }
 
