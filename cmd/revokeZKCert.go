@@ -167,10 +167,42 @@ func RevokeZKCert[T zkcertificate.Content](
 	}
 	auth.Context = ctx
 
-	// Add to queue with operation type 1 (revocation)
-	tx, err := registry.AddOperationToQueue(auth, leafHash.Bytes32(), 1)
-	if err != nil {
-		return nil, fmt.Errorf("add revocation to queue: %w", err)
+	var tx *types.Transaction
+
+	// Handle different registry types
+	if certificate.Standard == zkcertificate.StandardKYC {
+		// For zkKYC, we need to use the special registry with additional parameters
+		kycRegistry, err := contracts.NewZkKYCRegistry(registryAddress, client)
+		if err != nil {
+			return nil, fmt.Errorf("load kyc registry: %w", err)
+		}
+		
+		// Get KYC data from content to get the ID hash
+		kycContent := any(certificate.Content).(zkcertificate.KYCContent)
+		
+		idHash, err := kycContent.IDHash()
+		if err != nil {
+			return nil, fmt.Errorf("get id hash: %w", err)
+		}
+		
+		// For revocation, we still need to provide these parameters even though they may not be used
+		tx, err = kycRegistry.AddOperationToQueue(
+			auth, 
+			leafHash.Bytes32(), 
+			1, // operation: 1 = revocation
+			idHash.BigInt(),
+			certificate.HolderCommitment.BigInt(), // salt hash
+			big.NewInt(certificate.ExpirationDate.Unix()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("add kyc revocation to queue: %w", err)
+		}
+	} else {
+		// For other certificate types, use the standard registry
+		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), 1)
+		if err != nil {
+			return nil, fmt.Errorf("add revocation to queue: %w", err)
+		}
 	}
 
 	if receipt, err := bind.WaitMined(ctx, client, tx); err != nil {

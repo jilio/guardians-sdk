@@ -192,10 +192,42 @@ func IssueZKCert[T zkcertificate.Content](
 	}
 	auth.Context = ctx
 
-	// Add to queue with operation type 0 (addition)
-	tx, err := registry.AddOperationToQueue(auth, leafHash.Bytes32(), 0)
-	if err != nil {
-		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("add operation to queue: %w", err)
+	var tx *types.Transaction
+	
+	// Handle different registry types
+	if cert.Standard == zkcertificate.StandardKYC {
+		// For zkKYC, we need to use the special registry with additional parameters
+		kycRegistry, err := contracts.NewZkKYCRegistry(registryAddress, ethRPC)
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("load kyc registry: %w", err)
+		}
+		
+		// Get KYC data from content to get the ID hash
+		kycContent := any(cert.Content).(zkcertificate.KYCContent)
+		
+		idHash, err := kycContent.IDHash()
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get id hash: %w", err)
+		}
+		
+		// Add to queue with KYC-specific parameters
+		tx, err = kycRegistry.AddOperationToQueue(
+			auth, 
+			leafHash.Bytes32(), 
+			0, // operation: 0 = addition
+			idHash.BigInt(),
+			cert.HolderCommitment.BigInt(), // salt hash
+			big.NewInt(cert.ExpirationDate.Unix()),
+		)
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("add kyc operation to queue: %w", err)
+		}
+	} else {
+		// For other certificate types, use the standard registry
+		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), 0)
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("add operation to queue: %w", err)
+		}
 	}
 
 	if receipt, err := bind.WaitMined(ctx, ethRPC, tx); err != nil {
@@ -205,9 +237,21 @@ func IssueZKCert[T zkcertificate.Content](
 	}
 
 	// Get queue position
-	queuePosition, err := registry.GetQueuePosition(&bind.CallOpts{Context: ctx}, leafHash.Bytes32())
-	if err != nil {
-		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get queue position: %w", err)
+	var queuePosition *big.Int
+	if cert.Standard == zkcertificate.StandardKYC {
+		kycRegistry, err := contracts.NewZkKYCRegistry(registryAddress, ethRPC)
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("load kyc registry for queue position: %w", err)
+		}
+		queuePosition, err = kycRegistry.GetQueuePosition(&bind.CallOpts{Context: ctx}, leafHash.Bytes32())
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get kyc queue position: %w", err)
+		}
+	} else {
+		queuePosition, err = registry.GetQueuePosition(&bind.CallOpts{Context: ctx}, leafHash.Bytes32())
+		if err != nil {
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get queue position: %w", err)
+		}
 	}
 
 	return tx, zkcertificate.IssuedCertificate[T]{
