@@ -321,9 +321,28 @@ func IssueZKCert[T zkcertificate.Content](
 	}
 
 	// Get Merkle proof for the processed certificate
-	proof, err := merkle.GetProof(ctx, merkleProofClient, registryAddress.Hex(), leafHash.String())
+	// Retry if the Merkle proof service is not yet synchronized
+	fmt.Fprintf(os.Stderr, "Certificate processed. Retrieving Merkle proof...\n")
+
+	var proof merkle.Proof
+	for range 12 { // Try for up to 1 minute (12 * 5 seconds)
+		proof, err = merkle.GetProof(ctx, merkleProofClient, registryAddress.Hex(), leafHash.String())
+		if err != nil {
+			// Check if it's a sync error
+			if err.Error() == "get merkle proof: rpc error: code = FailedPrecondition desc = registry indexer is not on head, try again later" {
+				fmt.Fprintf(os.Stderr, "Merkle proof service is syncing, retrying in 5 seconds...\n")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			// For other errors, fail immediately
+			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get merkle proof: %w", err)
+		}
+		// Success
+		break
+	}
+
 	if err != nil {
-		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get merkle proof: %w", err)
+		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get merkle proof after retries: %w", err)
 	}
 
 	return tx, zkcertificate.IssuedCertificate[T]{
