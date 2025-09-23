@@ -145,6 +145,12 @@ type EthereumIssueClient interface {
 	ChainID(ctx context.Context) (*big.Int, error)
 }
 
+// MerkleProofClient combines both EmptyLeafProver and Prover interfaces
+type MerkleProofClient interface {
+	merkle.EmptyLeafProver
+	merkle.Prover
+}
+
 // IssueZKCert registers a zero-knowledge certificate (ZKCert) to the on-chain queue.
 //
 // The function performs the following steps:
@@ -155,7 +161,7 @@ func IssueZKCert[T zkcertificate.Content](
 	ctx context.Context,
 	cert zkcertificate.Certificate[T],
 	ethRPC EthereumIssueClient,
-	merkleProofClient merkle.EmptyLeafProver,
+	merkleProofClient MerkleProofClient,
 	registryAddress common.Address,
 	providerKey *ecdsa.PrivateKey,
 ) (*types.Transaction, zkcertificate.IssuedCertificate[T], error) {
@@ -185,7 +191,7 @@ func IssueZKCert[T zkcertificate.Content](
 
 	leafHash := cert.LeafHash
 
-	// Add certificate to queue (operation 0 = addition)
+	// Add certificate to queue
 	auth, err := bind.NewKeyedTransactorWithChainID(providerKey, chainID)
 	if err != nil {
 		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("create transaction signer from private key: %w", err)
@@ -193,7 +199,7 @@ func IssueZKCert[T zkcertificate.Content](
 	auth.Context = ctx
 
 	var tx *types.Transaction
-	
+
 	// Handle different registry types
 	if cert.Standard == zkcertificate.StandardKYC {
 		// For zkKYC, we need to use the special registry with additional parameters
@@ -201,19 +207,19 @@ func IssueZKCert[T zkcertificate.Content](
 		if err != nil {
 			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("load kyc registry: %w", err)
 		}
-		
+
 		// Get KYC data from content to get the ID hash
 		kycContent := any(cert.Content).(zkcertificate.KYCContent)
-		
+
 		idHash, err := kycContent.IDHash()
 		if err != nil {
 			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get id hash: %w", err)
 		}
-		
+
 		// Add to queue with KYC-specific parameters
 		tx, err = kycRegistry.AddOperationToQueue(
-			auth, 
-			leafHash.Bytes32(), 
+			auth,
+			leafHash.Bytes32(),
 			0, // operation: 0 = addition
 			idHash.BigInt(),
 			cert.HolderCommitment.BigInt(), // salt hash
@@ -224,7 +230,7 @@ func IssueZKCert[T zkcertificate.Content](
 		}
 	} else {
 		// For other certificate types, use the standard registry
-		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), 0)
+		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), OperationAddition)
 		if err != nil {
 			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("add operation to queue: %w", err)
 		}
@@ -254,6 +260,72 @@ func IssueZKCert[T zkcertificate.Content](
 		}
 	}
 
+	// Wait for certificate to be processed from the queue
+	fmt.Fprintf(os.Stderr, "Certificate queued at position %s. Waiting for processing...\n", queuePosition)
+
+	// Poll until the certificate is processed
+	processed := false
+
+	for !processed {
+		// Get current queue pointer
+		var currentPointer *big.Int
+		if cert.Standard == zkcertificate.StandardKYC {
+			kycRegistry, err := contracts.NewZkKYCRegistry(registryAddress, ethRPC)
+			if err != nil {
+				return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("load kyc registry for queue check: %w", err)
+			}
+			currentPointer, err = kycRegistry.CurrentQueuePointer(&bind.CallOpts{Context: ctx})
+			if err != nil {
+				return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get current queue pointer: %w", err)
+			}
+		} else {
+			currentPointer, err = registry.CurrentQueuePointer(&bind.CallOpts{Context: ctx})
+			if err != nil {
+				return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get current queue pointer: %w", err)
+			}
+		}
+
+		// Check if our certificate has been processed
+		if currentPointer.Cmp(queuePosition) > 0 {
+			// Our certificate should have been processed
+			// Get the certificate data to confirm
+			if cert.Standard == zkcertificate.StandardKYC {
+				kycRegistry, err := contracts.NewZkKYCRegistry(registryAddress, ethRPC)
+				if err != nil {
+					return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("load kyc registry for status check: %w", err)
+				}
+				certData, err := kycRegistry.ZkCertificateProcessingData(&bind.CallOpts{Context: ctx}, leafHash.Bytes32())
+				if err != nil {
+					return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get certificate processing data: %w", err)
+				}
+				// Check if state is processed
+				if certData.State > 0 {
+					processed = true
+				}
+			} else {
+				certData, err := registry.ZkCertificateProcessingData(&bind.CallOpts{Context: ctx}, leafHash.Bytes32())
+				if err != nil {
+					return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get certificate processing data: %w", err)
+				}
+				// Check if state is processed
+				if certData.State > 0 {
+					processed = true
+				}
+			}
+		}
+
+		if !processed {
+			fmt.Fprintf(os.Stderr, "Current queue position: %s, waiting for position: %s\n", currentPointer, queuePosition)
+			time.Sleep(5 * time.Second)
+		}
+	}
+
+	// Get Merkle proof for the processed certificate
+	proof, err := merkle.GetProof(ctx, merkleProofClient, registryAddress.Hex(), leafHash.String())
+	if err != nil {
+		return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("get merkle proof: %w", err)
+	}
+
 	return tx, zkcertificate.IssuedCertificate[T]{
 		Certificate: cert,
 		Registration: zkcertificate.RegistrationDetails{
@@ -261,8 +333,9 @@ func IssueZKCert[T zkcertificate.Content](
 			ChainID:       chainID,
 			Revocable:     true,
 			QueuePosition: queuePosition,
-			// LeafIndex and MerkleProof will be set later by the queue processor
+			LeafIndex:     proof.LeafIndex,
 		},
+		MerkleProof: &proof,
 	}, nil
 }
 
