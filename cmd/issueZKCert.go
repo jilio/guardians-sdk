@@ -230,7 +230,7 @@ func IssueZKCert[T zkcertificate.Content](
 		}
 	} else {
 		// For other certificate types, use the standard registry
-		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), OperationAddition)
+		tx, err = registry.AddOperationToQueue(auth, leafHash.Bytes32(), 0)
 		if err != nil {
 			return nil, zkcertificate.IssuedCertificate[T]{}, fmt.Errorf("add operation to queue: %w", err)
 		}
