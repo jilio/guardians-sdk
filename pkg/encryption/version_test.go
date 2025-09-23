@@ -20,7 +20,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/encryption"
+	"github.com/jilio/guardians-sdk/v3/pkg/encryption"
 )
 
 func TestIsVersion(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/zkcertificate"
+	"github.com/jilio/guardians-sdk/v3/pkg/zkcertificate"
 )
 
 func TestHolderCommitment_Validate(t *testing.T) {

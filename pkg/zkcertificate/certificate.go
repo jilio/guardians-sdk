@@ -28,8 +28,8 @@ import (
 	"github.com/iden3/go-iden3-crypto/v2/babyjub"
 	"github.com/iden3/go-iden3-crypto/v2/poseidon"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/encryption"
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/merkle"
+	"github.com/jilio/guardians-sdk/v3/pkg/encryption"
+	"github.com/jilio/guardians-sdk/v3/pkg/merkle"
 )
 
 var eddsaPrimeFieldMod, _ = new(big.Int).SetString("2736030358979909402780800718157159386076813972158567259200215660948447373040", 10)
@@ -175,15 +175,16 @@ func (p *ProviderData) UnmarshalJSON(data []byte) error {
 type IssuedCertificate[T Content] struct {
 	Certificate[T] `json:",inline"`
 	Registration   RegistrationDetails `json:"registration"`
-	MerkleProof    merkle.Proof        `json:"merkleProof"`
+	MerkleProof    *merkle.Proof       `json:"merkleProof,omitempty"`
 }
 
 // RegistrationDetails represents details related to the registration of a certificate.
 type RegistrationDetails struct {
-	Address   common.Address `json:"address"`
-	ChainID   *big.Int       `json:"chainID"`
-	Revocable bool           `json:"revocable"`
-	LeafIndex int            `json:"leafIndex"`
+	Address       common.Address `json:"address"`
+	ChainID       *big.Int       `json:"chainID"`
+	Revocable     bool           `json:"revocable"`
+	LeafIndex     int            `json:"leafIndex,omitempty"`
+	QueuePosition *big.Int       `json:"queuePosition,omitempty"`
 }
 
 // prepareForEdDSA computes the Poseidon hash of the given inputs and reduces it to the field supported by EdDSA.
@@ -345,7 +346,7 @@ func DeserializeIssuedCertificateJSON(r io.Reader) (IssuedCertificate[Content], 
 			RandomSalt:       alias.RandomSalt,
 		},
 		Registration: alias.Registration,
-		MerkleProof:  alias.MerkleProof,
+		MerkleProof:  &alias.MerkleProof,
 	}, nil
 }
 

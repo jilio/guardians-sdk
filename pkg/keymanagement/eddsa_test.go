@@ -25,7 +25,7 @@ import (
 	"github.com/iden3/go-iden3-crypto/v2/babyjub"
 	"github.com/stretchr/testify/require"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/keymanagement"
+	"github.com/jilio/guardians-sdk/v3/pkg/keymanagement"
 )
 
 func TestDeriveEdDSAKeyFromEthereumPrivateKey(t *testing.T) {

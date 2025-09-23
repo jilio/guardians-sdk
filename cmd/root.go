@@ -22,7 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/galactica-corp/guardians-sdk/v3/pkg/zkcertificate"
+	"github.com/jilio/guardians-sdk/v3/pkg/zkcertificate"
 )
 
 func NewRootCmd() *cobra.Command {

@@ -122,7 +122,9 @@ func toSDKProof(proof *merkle.Proof) (Proof, error) {
 func ConnectToMerkleProofService(merkleProofServiceHost string, useTLS bool) (merkle.QueryClient, error) {
 	var creds credentials.TransportCredentials
 	if useTLS {
-		creds = credentials.NewTLS(&tls.Config{})
+		creds = credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})
 	} else {
 		creds = insecure.NewCredentials()
 	}
